@@ -18,8 +18,8 @@ This repository provides an automated agent runtime for Linux instances:
 ## Installation & Running
 
 ```bash
-git clone https://github.com/makassartoraja936-max/hermes-9router.git ~/workspace/hermes-9router
-cd ~/workspace/hermes-9router
+git clone https://github.com/makassartoraja936-max/hirmis-na-9-router.git ~/workspace/hirmis-na-9-router
+cd ~/workspace/hirmis-na-9-router
 bash setup.sh
 ```
 

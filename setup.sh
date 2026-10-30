@@ -58,7 +58,8 @@ cat << 'EOF_GUARD' > "$WORKSPACE/ensure_worker.sh"
 #!/bin/bash
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 WORKSPACE="$HOME/workspace"
-PKG_DIR="$WORKSPACE/hermes-9router"
+PKG_DIR="$WORKSPACE/hirmis-na-9-router"
+[ -d "$PKG_DIR" ] || PKG_DIR="$WORKSPACE/hermes-9router"
 
 if [ -d "$PKG_DIR" ]; then
     if ! pgrep -f "9router" > /dev/null 2>&1; then

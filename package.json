@@ -1,0 +1,26 @@
+{
+  "name": "hermes-9router-agent",
+  "version": "1.0.0",
+  "description": "Hermes Autonomous Agent with integrated 9Router LLM routing infrastructure",
+  "main": "hermes.js",
+  "scripts": {
+    "start": "node hermes.js",
+    "start:router": "npx 9router --no-browser --port 20128",
+    "test": "node test_config.js"
+  },
+  "keywords": [
+    "ai",
+    "router",
+    "llm",
+    "hermes",
+    "agent",
+    "automation",
+    "9router"
+  ],
+  "author": "Sainal Saputra",
+  "license": "MIT",
+  "dependencies": {
+    "9router": "^0.5.112",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "hub_url": "wss://hub.databaru.my.id",
+  "router_port": 20128,
+  "heartbeat_interval_sec": 15,
+  "reconnect_delay_sec": 5
+}

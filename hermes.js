@@ -209,58 +209,81 @@ async function queryRouter(prompt, baseUrl) {
   });
 }
 
+const http = require('http');
+const https = require('https');
+const tls = require('tls');
+
 /**
- * Establishes an HTTP CONNECT tunnel socket if system proxy is configured
+ * Robust Zero-Dependency HTTPS Proxy Tunnel Agent
+ * Tunnels TCP via HTTP CONNECT and establishes secure TLS with SNI
  */
-function createProxySocket(targetUrl) {
+class CustomTunnelAgent extends https.Agent {
+  constructor(proxyUrlStr, options) {
+    super(options || {});
+    const cleanStr = proxyUrlStr.includes('://') ? proxyUrlStr : `http://${proxyUrlStr}`;
+    this.proxyUrl = new URL(cleanStr);
+  }
+
+  createConnection(options, callback) {
+    const targetHost = options.host || options.hostname;
+    const targetPort = options.port || 443;
+
+    const headers = { 'Host': `${targetHost}:${targetPort}` };
+    if (this.proxyUrl.username && this.proxyUrl.password) {
+      const auth = Buffer.from(`${this.proxyUrl.username}:${this.proxyUrl.password}`).toString('base64');
+      headers['Proxy-Authorization'] = `Basic ${auth}`;
+    }
+
+    const connectReq = http.request({
+      host: this.proxyUrl.hostname,
+      port: this.proxyUrl.port || 3128,
+      method: 'CONNECT',
+      path: `${targetHost}:${targetPort}`,
+      headers: headers,
+      timeout: 12000
+    });
+
+    connectReq.on('connect', (res, socket) => {
+      if (res.statusCode === 200) {
+        // Upgrade plain TCP socket to TLS with SNI servername
+        const tlsSocket = tls.connect({
+          socket: socket,
+          servername: targetHost
+        });
+        tlsSocket.on('error', (err) => callback(err));
+        callback(null, tlsSocket);
+      } else {
+        callback(new Error(`Proxy CONNECT rejected HTTP ${res.statusCode}`));
+      }
+    });
+
+    connectReq.on('error', (err) => callback(err));
+    connectReq.on('timeout', () => {
+      connectReq.destroy();
+      callback(new Error('Proxy CONNECT timeout'));
+    });
+    connectReq.end();
+  }
+}
+
+/**
+ * Returns an HTTP/HTTPS proxy agent if environment specifies a proxy
+ */
+function getProxyAgent(targetUrl) {
   const proxyUrlStr = process.env.https_proxy || process.env.HTTPS_PROXY ||
                       process.env.http_proxy || process.env.HTTP_PROXY ||
                       process.env.all_proxy || process.env.ALL_PROXY;
-  if (!proxyUrlStr) return Promise.resolve(null);
+  if (!proxyUrlStr) return null;
 
-  const http = require('http');
-  return new Promise((resolve) => {
-    try {
-      const pUrl = new URL(proxyUrlStr.includes('://') ? proxyUrlStr : `http://${proxyUrlStr}`);
-      const tUrl = new URL(targetUrl);
-      const targetPort = tUrl.port || (tUrl.protocol === 'wss:' ? 443 : 80);
-
-      const headers = { 'Host': `${tUrl.hostname}:${targetPort}` };
-      if (pUrl.username && pUrl.password) {
-        const auth = Buffer.from(`${pUrl.username}:${pUrl.password}`).toString('base64');
-        headers['Proxy-Authorization'] = `Basic ${auth}`;
-      }
-
-      const req = http.request({
-        host: pUrl.hostname,
-        port: pUrl.port || 3128,
-        method: 'CONNECT',
-        path: `${tUrl.hostname}:${targetPort}`,
-        headers: headers,
-        timeout: 8000
-      });
-
-      req.on('connect', (res, socket) => {
-        if (res.statusCode === 200) {
-          resolve(socket);
-        } else {
-          console.warn(`[HERMES] Proxy tunnel returned status ${res.statusCode}, falling back to direct.`);
-          resolve(null);
-        }
-      });
-      req.on('error', (err) => {
-        console.warn(`[HERMES] Proxy CONNECT error (${err.message}), falling back to direct.`);
-        resolve(null);
-      });
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(null);
-      });
-      req.end();
-    } catch (e) {
-      resolve(null);
-    }
-  });
+  try {
+    const { HttpsProxyAgent } = require('https-proxy-agent');
+    const cleanStr = proxyUrlStr.includes('://') ? proxyUrlStr : `http://${proxyUrlStr}`;
+    console.log(`[HERMES] Using https-proxy-agent: ${cleanStr}`);
+    return new HttpsProxyAgent(cleanStr);
+  } catch (e) {
+    console.log(`[HERMES] Using CustomTunnelAgent: ${proxyUrlStr}`);
+    return new CustomTunnelAgent(proxyUrlStr, { keepAlive: true });
+  }
 }
 
 /**
@@ -280,13 +303,11 @@ async function connectHub() {
   console.log(`[HERMES] Starting Hermes Agent: ${vpsName} [${workerId}]`);
   console.log(`[HERMES] Connecting to Hub Server: ${hubUrl}`);
 
-  const wsOptions = { handshakeTimeout: 10000 };
-  try {
-    const proxySocket = await createProxySocket(hubUrl);
-    if (proxySocket) {
-      wsOptions.createConnection = () => proxySocket;
-    }
-  } catch (e) {}
+  const wsOptions = { handshakeTimeout: 15000 };
+  const proxyAgent = getProxyAgent(hubUrl);
+  if (proxyAgent) {
+    wsOptions.agent = proxyAgent;
+  }
 
   const ws = new WebSocket(hubUrl, wsOptions);
   let heartbeatTimer = null;

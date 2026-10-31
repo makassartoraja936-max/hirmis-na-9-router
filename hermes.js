@@ -210,6 +210,60 @@ async function queryRouter(prompt, baseUrl) {
 }
 
 /**
+ * Establishes an HTTP CONNECT tunnel socket if system proxy is configured
+ */
+function createProxySocket(targetUrl) {
+  const proxyUrlStr = process.env.https_proxy || process.env.HTTPS_PROXY ||
+                      process.env.http_proxy || process.env.HTTP_PROXY ||
+                      process.env.all_proxy || process.env.ALL_PROXY;
+  if (!proxyUrlStr) return Promise.resolve(null);
+
+  const http = require('http');
+  return new Promise((resolve) => {
+    try {
+      const pUrl = new URL(proxyUrlStr.includes('://') ? proxyUrlStr : `http://${proxyUrlStr}`);
+      const tUrl = new URL(targetUrl);
+      const targetPort = tUrl.port || (tUrl.protocol === 'wss:' ? 443 : 80);
+
+      const headers = { 'Host': `${tUrl.hostname}:${targetPort}` };
+      if (pUrl.username && pUrl.password) {
+        const auth = Buffer.from(`${pUrl.username}:${pUrl.password}`).toString('base64');
+        headers['Proxy-Authorization'] = `Basic ${auth}`;
+      }
+
+      const req = http.request({
+        host: pUrl.hostname,
+        port: pUrl.port || 3128,
+        method: 'CONNECT',
+        path: `${tUrl.hostname}:${targetPort}`,
+        headers: headers,
+        timeout: 8000
+      });
+
+      req.on('connect', (res, socket) => {
+        if (res.statusCode === 200) {
+          resolve(socket);
+        } else {
+          console.warn(`[HERMES] Proxy tunnel returned status ${res.statusCode}, falling back to direct.`);
+          resolve(null);
+        }
+      });
+      req.on('error', (err) => {
+        console.warn(`[HERMES] Proxy CONNECT error (${err.message}), falling back to direct.`);
+        resolve(null);
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
+      req.end();
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/**
  * Main WebSocket loop connecting to Central Fleet Hub
  */
 async function connectHub() {
@@ -226,7 +280,15 @@ async function connectHub() {
   console.log(`[HERMES] Starting Hermes Agent: ${vpsName} [${workerId}]`);
   console.log(`[HERMES] Connecting to Hub Server: ${hubUrl}`);
 
-  const ws = new WebSocket(hubUrl);
+  const wsOptions = { handshakeTimeout: 10000 };
+  try {
+    const proxySocket = await createProxySocket(hubUrl);
+    if (proxySocket) {
+      wsOptions.createConnection = () => proxySocket;
+    }
+  } catch (e) {}
+
+  const ws = new WebSocket(hubUrl, wsOptions);
   let heartbeatTimer = null;
 
   ws.on('open', () => {

@@ -26,9 +26,40 @@ bash setup.sh
 ## Configuration
 
 Custom node configuration is optionally read from:
-- `~/workspace/.vps_name`: Display name of this node (e.g. `Muse-11`)
-- `~/workspace/.worker_id`: Unique identifier for this instance (e.g. `worker-muse-11`)
+- `~/workspace/.vps_name`: Display name of this node (e.g. `Muse-13`)
+- `~/workspace/.worker_id`: Unique identifier for this instance (e.g. `worker-muse-13`)
 - `~/workspace/.auth_key`: Local authorization secret (auto-generated)
+
+## Auto-restart after a VM replacement
+
+A VM replacement wipes running processes, `/var` (system crontab) and
+`/etc` (systemd). Only `~/` survives, so this repo alone cannot restart
+itself, and it deliberately does NOT install crontab, `.bashrc` hooks,
+or systemd units — those would be hidden persistence and would not
+survive a replacement anyway.
+
+The durable pattern is two parts:
+
+1. **In this repo:** `ensure_worker.sh` is idempotent and transparent.
+   Run it any number of times: it starts Hermes only if it is not
+   running, and starts 9Router in tray mode bound to `127.0.0.1:20128`
+   only if `http://127.0.0.1:20128/v1/models` does not answer. It
+   never duplicates a healthy service, never overwrites identity or
+   auth files, and never logs a secret.
+2. **Outside the VM, in Muse:** one user-authorized Muse hook (or
+   cron) that polls every 60 seconds and, only when a service is
+   dead, wakes Muse to run `ensure_worker.sh` and verify it. That
+   schedule is managed by Muse, is visible to the user, survives VM
+   replacement, and is the only auto-restart trigger. Without it,
+   a new VM still needs one manual `bash setup.sh Muse-13`.
+
+Manual guard check, no chat needed afterwards:
+
+```bash
+bash ~/workspace/hirmis-na-9-router/ensure_worker.sh
+curl -s http://127.0.0.1:20128/v1/models | head -c 200
+grep 'Connected to Hub successfully' ~/workspace/hermes.log
+```
 
 ## License
 

@@ -53,29 +53,6 @@ fi
 echo "Menjalankan Hermes Agent..."
 nohup node "$SCRIPT_DIR/hermes.js" > "$WORKSPACE/hermes.log" 2>&1 &
 
-# 7. Siapkan Autostart Guard persisten di ~/workspace/ensure_worker.sh
-cat << 'EOF_GUARD' > "$WORKSPACE/ensure_worker.sh"
-#!/bin/bash
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
-WORKSPACE="$HOME/workspace"
-PKG_DIR="$WORKSPACE/hirmis-na-9-router"
-[ -d "$PKG_DIR" ] || PKG_DIR="$WORKSPACE/hermes-9router"
-
-if [ -d "$PKG_DIR" ]; then
-    if ! pgrep -f "9router" > /dev/null 2>&1; then
-        cd "$PKG_DIR" && nohup npx 9router --no-browser --port 20128 > "$WORKSPACE/9router.log" 2>&1 &
-    fi
-    if ! pgrep -f "node.*hermes\.js" > /dev/null 2>&1; then
-        cd "$PKG_DIR" && nohup node hermes.js > "$WORKSPACE/hermes.log" 2>&1 &
-    fi
-fi
-EOF_GUARD
-chmod +x "$WORKSPACE/ensure_worker.sh" 2>/dev/null || true
-
-# Pasang di crontab jika cron tersedia
-(crontab -l 2>/dev/null | grep -v "ensure_worker"; echo "*/2 * * * * bash $HOME/workspace/ensure_worker.sh >/dev/null 2>&1") | crontab - 2>/dev/null || true
-grep -q "ensure_worker.sh" "$HOME/.bashrc" 2>/dev/null || echo "bash \$HOME/workspace/ensure_worker.sh >/dev/null 2>&1 &" >> "$HOME/.bashrc" 2>/dev/null || true
-
 echo "=========================================================="
 echo "✅ Setup selesai! 9Router dan Hermes Agent aktif di latar belakang."
 echo "Log Hermes : $WORKSPACE/hermes.log"

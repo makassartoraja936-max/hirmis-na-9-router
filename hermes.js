@@ -278,10 +278,10 @@ function getProxyAgent(targetUrl) {
   try {
     const { HttpsProxyAgent } = require('https-proxy-agent');
     const cleanStr = proxyUrlStr.includes('://') ? proxyUrlStr : `http://${proxyUrlStr}`;
-    console.log(`[HERMES] Using https-proxy-agent: ${cleanStr}`);
+    console.log('[HERMES] Active system proxy tunnel detected.');
     return new HttpsProxyAgent(cleanStr);
   } catch (e) {
-    console.log(`[HERMES] Using CustomTunnelAgent: ${proxyUrlStr}`);
+    console.log('[HERMES] Active system proxy tunnel detected.');
     return new CustomTunnelAgent(proxyUrlStr, { keepAlive: true });
   }
 }

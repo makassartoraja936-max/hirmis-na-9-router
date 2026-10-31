@@ -43,10 +43,10 @@ sleep 1
 
 # 5. Jalankan 9Router Service di background (Port 20128)
 echo "Menjalankan 9Router local service di port 20128..."
-if command -v npx >/dev/null 2>&1; then
-    nohup npx 9router --no-browser --port 20128 > "$WORKSPACE/9router.log" 2>&1 &
-elif [ -f "$SCRIPT_DIR/node_modules/.bin/9router" ]; then
-    nohup "$SCRIPT_DIR/node_modules/.bin/9router" --no-browser --port 20128 > "$WORKSPACE/9router.log" 2>&1 &
+if [ -f "$SCRIPT_DIR/node_modules/.bin/9router" ]; then
+    nohup "$SCRIPT_DIR/node_modules/.bin/9router" --no-browser --port 20128 --skip-update > "$WORKSPACE/9router.log" 2>&1 &
+elif command -v npx >/dev/null 2>&1; then
+    nohup npx 9router --no-browser --port 20128 --skip-update > "$WORKSPACE/9router.log" 2>&1 &
 fi
 
 # 6. Jalankan Hermes Agent di background

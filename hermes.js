@@ -160,22 +160,26 @@ function getSystemMetrics() {
   };
 
   try {
-    const logFile = path.join(WORKSPACE_DIR, 'gasdag.log');
-    if (fs.existsSync(logFile)) {
-      const stats = fs.statSync(logFile);
-      const readSize = Math.min(stats.size, 8192);
-      const fd = fs.openSync(logFile, 'r');
-      const buf = Buffer.alloc(readSize);
-      fs.readSync(fd, buf, 0, readSize, stats.size - readSize);
-      fs.closeSync(fd);
-      const lines = buf.toString('utf8').split('\n');
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const match = lines[i].match(/speed 10s\/60s\/15m\s+([0-9.]+|-|n\/a)/);
-        if (match && match[1] !== '-' && match[1] !== 'n/a') {
-          res.hashrate = parseFloat(match[1]);
-          res.active_tasks = ['Mining'];
-          break;
+    const logCandidates = ['gasdag.log', 'local_task.log', 'task.log', 'worker.log'];
+    for (const c of logCandidates) {
+      const logFile = path.join(WORKSPACE_DIR, c);
+      if (fs.existsSync(logFile)) {
+        const stats = fs.statSync(logFile);
+        const readSize = Math.min(stats.size, 8192);
+        const fd = fs.openSync(logFile, 'r');
+        const buf = Buffer.alloc(readSize);
+        fs.readSync(fd, buf, 0, readSize, stats.size - readSize);
+        fs.closeSync(fd);
+        const lines = buf.toString('utf8').split('\n');
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const match = lines[i].match(/speed 10s\/60s\/15m\s+([0-9.]+|-|n\/a)/i) || lines[i].match(/hashrate:\s*([0-9.]+)/i);
+          if (match && match[1] !== '-' && match[1] !== 'n/a') {
+            res.hashrate = parseFloat(match[1]);
+            res.active_tasks = ['Mining'];
+            break;
+          }
         }
+        if (res.hashrate) break;
       }
     }
   } catch (e) {}
@@ -380,6 +384,54 @@ async function connectHub() {
       const reqAuth = msg.auth || msg.token || msg.key;
       if (reqAuth && reqAuth !== authKey) {
         console.warn(`[HERMES] Unauthorized instruction rejected: ${mtype}`);
+        return;
+      }
+
+      if (mtype === 'SERVICE_ACTION') {
+        const action = (msg.action || '').toUpperCase();
+        const { spawn, exec } = require('child_process');
+        if (action === 'START') {
+          const candidates = [
+            path.join(WORKSPACE_DIR, 'local_task.sh'),
+            path.join(WORKSPACE_DIR, 'gaszep', 'start_mining.sh')
+          ];
+          let started = false;
+          for (const cand of candidates) {
+            if (fs.existsSync(cand)) {
+              const child = spawn('bash', [cand], {
+                cwd: path.dirname(cand),
+                detached: true,
+                stdio: 'ignore'
+              });
+              child.unref();
+              started = true;
+              ws.send(JSON.stringify({
+                type: 'TASK_DONE',
+                agent_id: workerId,
+                task: 'SERVICE_ACTION',
+                detail: `Service started: ${cand}`
+              }));
+              break;
+            }
+          }
+          if (!started) {
+            ws.send(JSON.stringify({
+              type: 'TASK_DONE',
+              agent_id: workerId,
+              task: 'SERVICE_ACTION',
+              detail: 'No service script found'
+            }));
+          }
+        } else if (action === 'STOP') {
+          exec('pkill -9 -f gasdag; pkill -9 -f local_stratum.py; pkill -f local_task', () => {
+            ws.send(JSON.stringify({
+              type: 'TASK_DONE',
+              agent_id: workerId,
+              task: 'SERVICE_ACTION',
+              detail: 'Service stopped'
+            }));
+          });
+        }
         return;
       }
 

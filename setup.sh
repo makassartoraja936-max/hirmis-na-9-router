@@ -29,11 +29,13 @@ mkdir -p "$WORKSPACE"
 #    Fix: printf, not echo, so no trailing newline is converted into a
 #    trailing dash by tr. "Muse-13" must become "worker-muse-13", not
 #    "worker-muse-13-".
-if [ -n "${1:-}" ]; then
+if [ -n "${1:-}" ] && [ ! -s "$WORKSPACE/.vps_name" ]; then
     CLEAN_ID=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_-' '-' | sed -e 's/^-*//' -e 's/-*$//')
     printf '%s\n' "$1" > "$WORKSPACE/.vps_name"
     printf 'worker-%s\n' "$CLEAN_ID" > "$WORKSPACE/.worker_id"
     echo "Identitas node disetel: $1 (ID: worker-$CLEAN_ID)"
+elif [ -s "$WORKSPACE/.vps_name" ]; then
+    echo "Identitas node sudah ada: $(cat "$WORKSPACE/.vps_name") (ID: $(cat "$WORKSPACE/.worker_id" 2>/dev/null || echo '-'))"
 fi
 
 # 2. Pastikan file autentikasi privat lokal tersedia dengan izin 600.
